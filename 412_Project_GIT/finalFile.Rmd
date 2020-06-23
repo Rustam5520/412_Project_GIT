@@ -1,0 +1,541 @@
+---
+title: "KickStarter Projects: Exploratory Data Analysis"
+author: "Rustam Karpykov"
+date: "4/23/2020"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+# Exploratory Data Analysis of Kick-Starter Dataset 
+
+```{r Libraries, echo = FALSE, message=FALSE, results='hide', warning=FALSE}
+library(ggplot2)
+library(VIM)
+library(missForest)
+library(mice)
+library(dplyr)
+library(GGally)
+library(lubridate)
+library(stringi)
+library(corrplot)
+```
+
+```{r dataRaw, echo = FALSE}
+dataRaw <- read.csv("C:/Users/Rustam/Desktop/school/412/412-Project/kickstarter-projects/ks-projects-201801.csv")
+```
+
+
+## First look at data.
+
+```{r output_0, echo = FALSE}
+str(dataRaw)
+```
+
+
+* **ID** : *Identification Number of project* 
+* **name** : *name of project* 
+* **main_category** : *category of campaign*
+* **currency** : *currency used to support*
+* **deadline** : *deadline for crowdfunding*
+* **goal** : *fundraising goal*
+* **launched** : *date launched*
+* **pledged** : *amount pledged by crowd*
+* **state** : *current condition the project is in*
+* **backers** : *number of backers*
+* **country** : *country pledged from*
+* **usd pledged** : *amount of money pledged*
+* **usd_pledged_real** : *conversion in US dollars of the pledged column*
+* **usd_goal_real** : *conversion in US dollars of the goal column*
+
+
+**Notes on variables:** ID is not going to be usefull in future, hence obviously we are going to drop it. Also it is important to take into accaunt that we have two variables of type Date('deadline' and 'launched'), which have different structures, such that dealine is YYYY-MM-DD and launched is YYYY-MM-DD but with time. Hence we will have to work on those variables as well. Also we see 3 different variables related to amount of money pledged. It would be useful to take a closer look at those. Last but not least is the target varible 'state'. Learning about it's relationships with other variables on early stages of analysis is very important for us in order to get prepared for upcoming modelling part. Since we have mentioned modelling we should not forget about relationships within predictors (independent variables), to be prepared for some problems which may occure in future, such as multicollinearity. Finally Missing values. Missing Values are also very important issue that has to be solved or gotten rid off, because we may lose satistical power, get bias in estimation of parameters and overall get analyses of the study complicated. At this point when we had a fist look at our data we can plan Exploratory Data Analysis and define some Research Questions. 
+
+### Research Questions:
+
+#### Target Variable:
+
+* What are frequencies of Success, Failure and other 'state' classes in dataset?
+* Is there any difference in goals of projects with different outcomes('states')?
+* What are 5 most succesfull categories of projects?
+* How US dollars of the pledged amount is distributed by different states?
+* Does success/failure rate depend on number of backers?
+* What are densities of backers and conversion in US dollars of the pledged amounts?
+
+#### Predictors:
+
+* Check relationships between all variables which define pledged amounts.
+* How pledged amounts are retaled to number of backers?
+* Which 5 categories got the most money plaged?
+* Which 3 countries got the most money plaged from?
+* How many backers do main categories get on average? 
+
+
+
+## Data Cleaning.
+
+### Missing Values 
+In order to be sure that further analysis will not be bothered and affected by possible missing values, we may want to check their existance in a first place. 
+
+```{r output_1, echo = FALSE}
+dataRaw %>% summarise_all(~ sum(is.na(.)))
+```
+
+From this output we see that only usd.pledged variable has missing values, it eases our workflow dozens of times. Hence it would be logical to investigate and try to fix this issue right from the begining. So let us get straight to it. 
+
+```{r output_2, echo = FALSE}
+dataRaw %>%
+  select(usd.pledged, goal, pledged, backers, usd_pledged_real, usd_goal_real) %>%
+  cor %>% 
+  corrplot
+```
+
+*At this point we see that usd.pledged variable is highly correlated with usd_pledged_real variable, hence we may try to make regression NA imputation or just imput values of usd_pledged_real.*
+
+```{r output_3, echo = FALSE}
+imputFit <- lm(usd.pledged ~ usd_pledged_real, data = dataRaw)
+imputVals <- dataRaw %>% 
+  filter(is.na(usd.pledged)) %>% 
+  select(usd_pledged_real)
+pred <- predict(imputFit, newdata = imputVals)
+head(pred[pred < 0], 10)
+```
+
+*Since some predicted values are negative, and it is impossible to have negative amount of money pledged, I choose to impute missing values of usd.pledged with usd_pledged_real values respectively.*
+
+```{r output_4, echo = FALSE}
+dataRaw$usd.pledged[which(is.na(dataRaw$usd.pledged))] <- dataRaw$usd_pledged_real[which(is.na(dataRaw$usd.pledged))]
+```
+
+
+Now, when we have all missing values imputed we can move to further EDA. 
+
+
+
+
+### Dealing with Dates.
+
+```{r output_5, echo = TRUE}
+dataRaw$launched <- stri_sub(dataRaw$launched , 1 , 10) %>% ymd
+head(dataRaw$launched)
+```
+
+
+
+
+
+## Target Variable:
+
+In the project my aim is to learn if it is possible to classify wheather Kick-Starter project will succeed or fail. Also Those classes were first presented before in 'First look at data' part above in variable called 'state'. Those are : "canceled", "failed", "live", "successful", "suspended", "undefined". 
+
+Moving straight to Research Questions about Target Variable.
+
+### What are frequencies of Success, Failure and other 'state' classes in dataset?
+
+```{r output_6, echo = FALSE, out.width = '70%'}
+dataRaw %>% 
+  ggplot(aes(x = state)) + 
+  geom_bar(aes(fill = state), colour = "black") +
+  ggtitle("Frequencies of Success, Failure and other 'state' classes in dataset")
+```
+
+*As we can see from the graph above the most frequent class is failure, though success is the second most frequent class. Hence we can say that most of observations are either faulure or success*
+
+### Is there any difference in goals of projects with different outcomes('states')?
+
+```{r output_7, echo = FALSE, out.width = '70%'}
+dataRaw %>% 
+  ggplot(aes(x = state, y = log(goal))) + 
+  geom_boxplot(aes(fill = state), colour = "black") + 
+  ggtitle("Is there any difference in goals of projects with different outcomes('states')?")
+```
+
+*From the graph above we can conclude that there is no visual evidense that goal amount of funding does affect state of project at all*
+
+```{r}
+summary(aov(log(dataRaw$goal) ~ dataRaw$state))
+```
+
+
+
+###  What are 5 most succesfull categories of projects?
+
+```{r output_8, echo = FALSE, out.width = '70%'}
+dataRaw %>% 
+  filter(state == 'successful') %>% 
+  select(main_category) %>% 
+  group_by(main_category) %>%
+  summarize(counts = n()) %>%
+  arrange(-counts) %>%                              
+  mutate(main_category = factor(main_category, main_category)) %>%
+  ggplot(aes(x=main_category, y=counts)) +  
+  geom_bar(aes(fill = main_category), stat="identity", colour = "black") +
+  theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) +
+  ggtitle("Main Categries from ones got higher number of success")
+```
+
+*While analyzing the barchart above, we can see that Music and Film/Video making have almost twise as much successful project than Games, Publishing and Art Categories, which get 3, 4 and 5 places respectively*
+
+### How US dollars of the pledged amount is distributed by different states?
+
+```{r output_9, echo = FALSE, out.width = '70%'}
+dataRaw %>% 
+  filter(usd_pledged_real != 0) %>% 
+  ggplot(aes(x=state,y=log(usd_pledged_real),fill=state)) + 
+    geom_violin(aes(fill = state)) + 
+    geom_boxplot(width=0.25) + ggtitle("Violin and Boxplots of log(USD pledged amount) by state of projects")
+```
+
+*From the plots above we found that successful projects got much higher amounts of funding that any other state categories, but still amounts of funding pledged is distributed extremely bad within all groups*
+
+### Does success/failure rate depend on number of backers?
+
+```{r output_10, echo = FALSE, out.width = '70%'}
+dataRaw %>% 
+  select(state, backers) %>%
+  group_by(state) %>% 
+  summarise(avg = mean(backers)) %>% 
+  ggplot(aes(x=state,y=avg)) +
+  geom_segment(aes(x=state, xend=state, y=0, yend=avg), alpha = 0.75) +
+  geom_point(size=5, color="darkred", fill="black", alpha = 1, shape=20, stroke = 2.5) + 
+  ggtitle("Lolipop Chart of average backers by state")
+```
+
+*Lolipop Chart gives us pretty great and logical result for our research question. From the visual output we can see that average amount of backers in successful project was much higher than in any other state of a project.*
+
+### What are densities of backers and conversion in US dollars of the pledged amounts?
+**Note:** Since range of usd_pledged_real variable is too wide and has too many extreme values, it was nesessary to apply transormation onto variable. After trying couple of them, I've chosen log transofmation. At this point it is a great opton.
+```{r output_11, echo = FALSE, out.width = '70%'}
+dataRaw %>% 
+  filter(usd_pledged_real != 0) %>% 
+  ggplot(aes(x = log(usd_pledged_real))) + 
+    geom_density(color = "black", fill = "darkgreen", alpha = 0.7) + 
+    ggtitle("Density plot of logarythmic usd_pledged_real")
+```
+
+*Distribution of log(usd_pledged_real) seems to have bell shape, but still it is far away from being normally distributed on a first glance. I will need to use some hypotheses in future in order to check normalyty assumptions of the variable.*
+
+```{r output_12, echo = FALSE, out.width = '70%'}
+dataRaw %>% 
+  filter(backers != 0) %>% 
+  ggplot(aes(x = log(backers))) + 
+    geom_density(color = "black", fill = "darkblue", alpha = 0.7) + 
+    ggtitle("Density plot of logarythmic backers")
+```
+
+*While we definetely could definetely see some similarities of previous variable with normal distribution, the situation with pladged variable seems to be unsolvable.*
+
+## Predictors:
+
+
+### Check relationships between all variables which define pledged amounts.
+
+```{r output_13, echo = FALSE, out.width = '70%'}
+dataRaw %>% 
+  select(usd.pledged, pledged, usd_pledged_real) %>% 
+  ggpairs() + 
+    theme_bw() +
+    theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))
+```
+
+*As I have supposed before, all 3 variables that describe amounts pledged are highly correlated, hence we may expect some multicollinearity issues in future modelling.*
+
+### How pledged amounts are retaled to number of backers?
+
+```{r output_14, echo = FALSE, out.width = '70%'}
+dataRaw %>% ggplot(aes(x = backers, y = usd_pledged_real)) + geom_point(color = "darkblue")
+```
+
+*At this point we can only say thet there MAY be a positive correleation between this two predictors. However it seems to be dominated by several outliers. But still is just visual conclusion*
+
+### Which 5 categories got the most money plaged on average?
+
+```{r output_15, echo = FALSE, out.width = '70%'}
+dataRaw %>% 
+  group_by(main_category) %>%
+  summarize(median = mean(usd_pledged_real)) %>%
+  arrange(-median) %>%                              
+  mutate(main_category = factor(main_category, main_category)) %>%
+  ggplot(aes(x=main_category, y=median)) +  
+  geom_bar(aes(fill = main_category), stat="identity", colour = "black") + 
+  theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))
+
+dataRaw %>% 
+  group_by(main_category) %>%
+  summarize(median = mean(backers)) %>%
+  arrange(-median) %>%   
+  select(main_category, median) %>%
+  head(5)
+```
+
+*There is one interesting detail in this graph. We can see that there is huge difference between Games and Comics categories. First's median amount is almost 3 times higher that for Comics*
+
+### Which 3 countries projects got the most money plaged from?
+
+```{r output_16, echo = FALSE, out.width = '70%'}
+dataRaw %>% 
+  select(country, usd_pledged_real) %>%
+  group_by(country) %>% 
+  summarise(sum = sum(usd_pledged_real)) %>% 
+  ggplot(aes(x=country,y=sum), color = country) +
+  geom_segment(aes(x = country, xend = country, y = 0, yend = sum, color = country), alpha = 0.75) +
+  geom_point(aes(color = country), size=5, fill= "black", alpha = 1, shape=20, stroke = 2.5)
+```
+
+*This graph makes it clear that most of fundings are pledged from USA. Next come Great Britain while other countries are far away from those two.*
+
+
+### How many backers do main categories get on average? 
+
+
+```{r output_17, echo = FALSE, out.width = '70%'}
+dataRaw %>% 
+  select(main_category, backers) %>%
+  group_by(main_category) %>% 
+  summarise(average = mean(backers)) %>% 
+  ggplot(aes(x=main_category,y=average), color = main_category) +
+  geom_segment(aes(x = main_category, xend = main_category, y = 0, yend = average, color = main_category), alpha = 0.75) +
+  geom_point(aes(color = main_category), size=5, fill= "black", alpha = 1, shape=20, stroke = 2.5) + 
+  theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))
+```
+
+
+```{r}
+summary(data$category)
+length(levels(data$currency))
+```
+```{r}
+data %>% arrange(-goal) %>% head(100) %>% select(goal)
+quantile(data$goal, .995)
+quantile(data$pledged, .98)
+quantile(data$backers, .999)
+quantile(data$usd.pledged, .995)
+quantile(data$usd_pledged_real, .995)
+quantile(data$usd_goal_real, .9825)
+```
+
+
+
+
+# Data Preprocessing 
+
+```{r}
+dataRaw$launched <- stri_sub(dataRaw$launched , 1 , 10) %>% ymd
+dataRaw$deadline <- stri_sub(dataRaw$deadline , 1 , 10) %>% ymd
+data <- dataRaw %>% mutate(period = I(as.numeric(deadline) - as.numeric(launched)))
+```
+
+
+
+
+
+
+```{r}
+data %>% arrange(-period) %>% head(10) %>% select(period)
+```
+
+```{r}
+data <- data %>% filter(data$period <= 93)
+hist(data$period)
+```
+
+```{r}
+data <- data %>% select(-ID, -name, -deadline, -launched, -country) %>% 
+        filter(state == c('successful' , 'failed')) %>% 
+        mutate(state = as.factor(ifelse(state == 'successful' , 1 , 0))) %>%
+        mutate_if(is.character , as.factor)
+```
+
+```{r}
+data$usd.pledged[which(is.na(data$usd.pledged))] <- data$usd_pledged_real[which(is.na(data$usd.pledged))]
+```
+
+
+
+\newpage
+# Appendix:
+
+```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE}
+```
+
+LR CV
+```{r}
+indexes = sample(nrow(data), nrow(data)*0.8) 
+train <- data[indexes, ] 
+test <- data[-indexes, ]
+```
+
+
+
+#Modelling 
+
+```{r}
+logReg = glm(state ~ ., data = train, family = "binomial")
+```
+
+
+```{r}
+logRegPred = ifelse(predict(logReg, type = "response") > 0.5, 0, 1)
+```
+
+```{r}
+calc_class_err = function(actual, predicted) {
+  mean(actual != predicted)
+}
+```
+
+
+```{r}
+calc_class_err(actual = train$state, predicted =  ifelse(logReg$fitted.values > 0.5, 1, 0))
+```
+
+```{r}
+table(train$state,ifelse(logReg$fitted.values > 0.5, 1, 0))
+```
+```{r}
+train_tab = table(predicted = ifelse(logReg$fitted.values > 0.5, 1, 0), actual = train$state)
+train_con_mat = confusionMatrix(train_tab, positive = "1")
+c(train_con_mat$overall["Accuracy"], 
+  train_con_mat$byClass["Sensitivity"], 
+  train_con_mat$byClass["Specificity"])
+```
+```{r}
+model_glm_pred_test= ifelse(predict(logReg, type = "response",newdata = test %>% select(-state)) > 0.5, 1, 0)
+
+test_tab = table(predicted = model_glm_pred_test, actual = test$state)
+
+test_con_mat = confusionMatrix(test_tab, positive = "1")
+c(test_con_mat$overall["Accuracy"], 
+  test_con_mat$byClass["Sensitivity"], 
+  test_con_mat$byClass["Specificity"])
+```
+
+
+```{r}
+
+```
+
+
+
+#CLEEEEEANEEEEST
+
+Cutting extremes
+
+```{r}
+dataCleanest <- data %>% 
+  filter(data$usd_goal_real <= quantile(data$usd_goal_real, .995),
+         data$goal <= quantile(data$goal, .995),
+         data$usd.pledged <= quantile(data$usd.pledged, .995),
+         data$usd_pledged_real <= quantile(data$usd_pledged_real, .995),
+         data$usd_goal_real <= quantile(data$usd_goal_real, .9825)
+         )
+```
+
+
+
+```{r}
+indexesCleanest = sample(nrow(dataCleanest), nrow(dataCleanest)*0.80) 
+trainCleanest <- dataCleanest[indexesCleanest, ] 
+testCleanest <- dataCleanest[-indexesCleanest, ]
+```
+
+Training model on 
+
+```{r}
+logRegCleanest = glm(state ~ ., data = trainCleanest %>% select(-usd.pledged, -pledged, usd_pledged_real), family = "binomial")
+```
+
+```{r}
+table(trainCleanest$state,ifelse(logRegCleanest$fitted.values > 0.5, 1, 0))
+```
+
+```{r}
+trainCleanest_tab = table(predicted = ifelse(logRegCleanest$fitted.values > 0.5, 1, 0), actual = trainCleanest$state)
+train_con_mat = confusionMatrix(trainCleanest_tab, positive = "1")
+c(train_con_mat$overall["Accuracy"], 
+  train_con_mat$byClass["Sensitivity"], 
+  train_con_mat$byClass["Specificity"])
+```
+
+```{r}
+model_glm_pred_test_Cleanest= ifelse(predict(logRegCleanest, type = "response",newdata = test %>% select(-state,-usd.pledged, -pledged, -usd_pledged_real)) > 0.5, 1, 0)
+
+test_tab_Cleanest = table(predicted = model_glm_pred_test_Cleanest, actual = test$state)
+
+test_con_mat = confusionMatrix(test_tab_Cleanest, positive = "1")
+c(test_con_mat$overall["Accuracy"], 
+  test_con_mat$byClass["Sensitivity"], 
+  test_con_mat$byClass["Specificity"])
+test_tab_Cleanest
+```
+```{r}
+extremeTest <- data[1231 : 45667,]
+```
+
+```{r}
+model_glm_pred_test_Cleanest_Extr= ifelse(predict(logRegCleanest, type = "response",newdata = extremeTest %>% select(-state)) > 0.5, 1, 0)
+
+test_tab_Cleanest_Extr = table(predicted = model_glm_pred_test_Cleanest_Extr, actual = extremeTest$state)
+
+test_con_mat = confusionMatrix(test_tab_Cleanest_Extr, positive = "1")
+c(test_con_mat$overall["Accuracy"], 
+  test_con_mat$byClass["Sensitivity"], 
+  test_con_mat$byClass["Specificity"])
+```
+```{r}
+model_glm_pred_test_ALL_DATA= ifelse(predict(logRegCleanest, type = "response",newdata = data %>% select(-state)) > 0.5, 1, 0)
+
+test_tab_Cleanest_ALL_DATA = table(predicted = model_glm_pred_test_ALL_DATA, actual = data$state)
+
+test_con_mat = confusionMatrix(test_tab_Cleanest_ALL_DATA, positive = "1")
+c(test_con_mat$overall["Accuracy"], 
+  test_con_mat$byClass["Sensitivity"], 
+  test_con_mat$byClass["Specificity"])
+```
+Lastest try >_<
+
+
+```{r}
+trainLast <- trainCleanest %>% select(-usd.pledged, -pledged, -usd_pledged_real)
+testLast <- testCleanest %>% select(-usd.pledged, -pledged, -usd_pledged_real)
+```
+
+```{r}
+logRegLast = glm(state ~ ., data = trainLast, family = "binomial")
+```
+
+
+```{r}
+summary(logRegLast)
+```
+
+```{r}
+trainLast_tab = table(predicted = ifelse(logRegLast$fitted.values > 0.5, 1, 0), actual = trainLast$state)
+train_con_mat = confusionMatrix(trainLast_tab, positive = "1")
+c(train_con_mat$overall["Accuracy"], 
+  train_con_mat$byClass["Sensitivity"], 
+  train_con_mat$byClass["Specificity"])
+train_con_mat
+```
+
+
+```{r}
+testLast_tab = table(predicted = ifelse(predict(logRegLast, type = "response",newdata = testLast) > 0.5, 1, 0), actual = testLast$state)
+test_con_mat = confusionMatrix(testLast_tab, positive = "1")
+c(train_con_mat$overall["Accuracy"], 
+  train_con_mat$byClass["Sensitivity"], 
+  train_con_mat$byClass["Specificity"])
+test_con_mat
+```
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,114 @@
+---
+title: "Modelling"
+author: "Rustam Karpykov"
+date: "20 06 2020"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries:
+
+```{r}
+library(e1071)
+library(dplyr)
+library(caret)
+```
+
+Data Import:
+
+```{r}
+dataRaw <- read.csv("C:/Users/Rustam/Desktop/school/412/412-Project/kickstarter-projects/ks-projects-201801.csv")
+```
+
+Data Preprocessing:
+
+```{r}
+dataRaw$usd.pledged[which(is.na(dataRaw$usd.pledged))] <- dataRaw$usd_pledged_real[which(is.na(dataRaw$usd.pledged))]
+```
+
+```{r}
+dataRaw$launched <- stri_sub(dataRaw$launched , 1 , 10) %>% ymd
+dataRaw$deadline <- stri_sub(dataRaw$deadline , 1 , 10) %>% ymd
+data <- dataRaw %>% mutate(time_int = I(as.numeric(deadline) - as.numeric(launched)))
+```
+
+```{r}
+data = data %>% select(-ID, -name,-deadline, -launched, -country) %>% 
+        filter(state %in% c('successful' , 'failed')) %>% 
+        mutate(state = as.factor(ifelse(state == 'successful' , 1 , 0))) %>%
+        mutate_if(is.character , as.factor)
+
+dataDummy = data.frame(model.matrix( ~ . -1 , data))
+colnames(data)[ncol(data)] = 'state'
+data$state = as.factor(data$state)
+```
+
+
+```{r}
+data2 <- data[250001:330000,]
+```
+
+
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+set.seed(123)
+index = sample(dim(data2)[1] , dim(data2)[1]*0.75 , replace = FALSE)
+trainset = data2[index , ]
+testset = data2[-index , ]
+```
+
+
+```{r}
+log.fit = glm(state1 ~ . , trainset , family = binomial(link = 'logit'))
+probs = predict(log.fit , testset , type = 'response')
+
+qplot(probs , geom = 'density') + geom_density(fill = 'lightblue' , alpha = 0.6) +
+        labs(x = 'Probabilities' , title = 'LOGISTIC REGRESSION - Probabilities assigned to test set')
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
